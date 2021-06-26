@@ -25,7 +25,7 @@
 // #define DRC_PROTECT_ADDR_REG
 
 // try to use non-flags generating functions if possible
-#define DRC_FLAGS_INVALIDATION
+// #define DRC_FLAGS_INVALIDATION
 // try to replace _simple functions by code
 // #define DRC_FLAGS_INVALIDATION_DCODE
 
@@ -111,7 +111,7 @@ typedef Bit8u HostReg;
 #define MAKEOP_S(OPCODE, F3, RS2, RS1, IMM12) (((OPCODE)&0x7F)|(((F3)&0x7)<<12)|(((RS1)&0x1F)<<15)|(((RS2)&0x1F)<<20)|(((IMM12)&0xFE0)<<20)|(((IMM12)&0x1F)<<7))
 #define MAKEOP_U(OPCODE, RD, IMM20U) (((OPCODE)&0x7F)|(((RD)&0x1F)<<7)|(((IMM20U)&0xFFFFF)<<12))
 
-#define MAKEOP_B(OPCODE, F3, RS1, RS2, IMM12) MAKEOP_S(OPCODE, F3, RS1, RS2, (((IMM12)&0x7FE)|(((IMM12)>>1)&0x800)|((((IMM12)>>11)&0x01))))
+#define MAKEOP_B(OPCODE, F3, RS1, RS2, IMM12) MAKEOP_S(OPCODE, F3, RS2, RS1, (((IMM12)&0x7FE)|(((IMM12)>>1)&0x800)|((((IMM12)>>11)&0x01))))
 
 #define OP_LUI_U(RD, IMM20U) MAKEOP_U(0x37, RD, IMM20U)
 #define OP_AUIPC_U(RD, IMM20U) MAKEOP_U(0x17, RD, IMM20U)
@@ -772,7 +772,6 @@ static const Bit8u* gen_create_branch_long_leqzero(HostReg reg) {
 
 // calculate relative offset and fill it into the location pointed to by data
 static void INLINE gen_fill_branch(const Bit8u* data) {
-	// FIXME: Why does this need to jump over 8 bytes? --GM
 #if C_DEBUG
 	Bits len=cache.pos-(data+0);
 	if (len<0) len=-len;
