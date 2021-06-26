@@ -25,7 +25,7 @@
 // #define DRC_PROTECT_ADDR_REG
 
 // try to use non-flags generating functions if possible
-// #define DRC_FLAGS_INVALIDATION
+#define DRC_FLAGS_INVALIDATION
 // try to replace _simple functions by code
 // #define DRC_FLAGS_INVALIDATION_DCODE
 
@@ -126,6 +126,7 @@ typedef Bit8u HostReg;
 #define MAKEOP_B(OPCODE, F3, RS1, RS2, IMM12) MAKEOP_S(OPCODE, F3, RS1, RS2, (((IMM12)&0x7FE)|(((IMM12)>>1)&0x800)|((((IMM12)>>11)&0x01))))
 
 #define OP_LUI_U(RD, IMM20U) MAKEOP_U(0x37, RD, IMM20U)
+#define OP_AUIPC_U(RD, IMM20U) MAKEOP_U(0x17, RD, IMM20U)
 #define OP_JALR_I(RD, RS1, IMM12) MAKEOP_I(0x67, 0x0, RD, RS1, IMM12)
 #define OP_BEQ_B(RS1, RS2, IMM12) MAKEOP_B(0x63, 0x0, RS1, RS2, IMM12)
 #define OP_BNE_B(RS1, RS2, IMM12) MAKEOP_B(0x63, 0x1, RS1, RS2, IMM12)
@@ -503,8 +504,30 @@ static void gen_extend_word(bool sign,HostReg reg) {
 
 // generate a call to a parameterless function
 static void INLINE gen_call_function_raw(void * func) {
-	gen_addr_temp1_clobbering_temp2((Bit64s)func);
-	cache_addd(OP_JALR_I(HOST_ra, temp1, 0));
+	if (((Bit64u)(cache.pos)) & 4) {
+		cache_addd(OP_AUIPC_U(HOST_ra, 0));
+		// 0
+		cache_addd(OP_LD_MEM_I(temp1, HOST_ra, 20));
+		cache_addd(OP_ADDID_I(HOST_ra, HOST_ra, 28));
+		// 0
+		cache_addd(OP_JALR_I(HOST_zero, temp1, 0));
+		cache_addd(0);
+		// 0
+		cache_addd((Bit32s)(((Bit64s)func)));
+		cache_addd((Bit32s)(((Bit64s)func)>>32));
+	} else {
+		// 0
+		cache_addd(OP_AUIPC_U(HOST_ra, 0));
+		cache_addd(OP_LD_MEM_I(temp1, HOST_ra, 16));
+		// 0
+		cache_addd(OP_ADDID_I(HOST_ra, HOST_ra, 28));
+		cache_addd(OP_JALR_I(HOST_zero, temp1, 0));
+		// 0
+		cache_addd((Bit32s)(((Bit64s)func)));
+		cache_addd((Bit32s)(((Bit64s)func)>>32));
+		// 0
+		cache_addd(0);
+	}
 }
 
 // generate a call to a function with paramcount parameters
@@ -706,3 +729,15 @@ static INLINE void gen_lea(HostReg dest_reg,Bitu scale,Bits imm) {
 	gen_add_imm(dest_reg, imm);
 }
 
+
+#ifdef DRC_FLAGS_INVALIDATION
+
+// called when a call to a function can be replaced by a
+// call to a simpler function
+static void gen_fill_function_ptr(const Bit8u * pos,void* fct_ptr,Bitu flags_type) {
+	// TODO: DRC_FLAGS_INVALIDATION_DCODE --GM
+	Bit64u ipos = (Bit64u)pos;
+	*(Bit64u *)((ipos + 16 + 0x7) & ~0x7) = (Bit64u)fct_ptr;
+}
+
+#endif
