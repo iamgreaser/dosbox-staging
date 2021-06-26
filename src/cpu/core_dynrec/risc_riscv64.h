@@ -36,6 +36,9 @@
 // type with the same size as a pointer
 #define DRC_PTR_SIZE_IM Bit64u
 
+// special modifier to ignore alignment in loads/stores
+#define RV_IGNORE_ALIGNMENT
+
 // register mapping
 typedef Bit8u HostReg;
 
@@ -234,6 +237,7 @@ static void gen_addr_temp1_clobbering_temp2(Bit64s addr) {
 static void gen_mov_word_to_reg(HostReg dest_reg,void* data,bool dword) {
 	// alignment....
 	if (dword) {
+#ifndef RV_IGNORE_ALIGNMENT
 		gen_addr_temp1_clobbering_temp2(((Bit64s)data) & (Bit64s)~3);
 		if ((DRC_PTR_SIZE_IM)data & 3) {
 			cache_addd(OP_LW_MEM_I(dest_reg, 0, temp1));
@@ -242,9 +246,13 @@ static void gen_mov_word_to_reg(HostReg dest_reg,void* data,bool dword) {
 			cache_addd(OP_SRLID_I(temp2, temp2, (32-((((DRC_PTR_SIZE_IM)data)&3)<<3))));
 			cache_addd(OP_ADDW_R(dest_reg, dest_reg, temp2));
 		} else {
+#endif
 			cache_addd(OP_LW_MEM_I(dest_reg, 0, temp1));
+#ifndef RV_IGNORE_ALIGNMENT
 		}
+#endif
 	} else {
+#ifndef RV_IGNORE_ALIGNMENT
 		gen_addr_temp1_clobbering_temp2((Bit64s)data);
 		if ((DRC_PTR_SIZE_IM)data & 1) {
 			cache_addd(OP_LBU_MEM_I(dest_reg, 0, temp1));
@@ -252,13 +260,17 @@ static void gen_mov_word_to_reg(HostReg dest_reg,void* data,bool dword) {
 			cache_addd(OP_SLLID_I(temp2, temp2, 8));
 			cache_addd(OP_OR_R(dest_reg, dest_reg, temp2));
 		} else {
+#endif
 			cache_addd(OP_LHU_MEM_I(dest_reg, 0, temp1));
+#ifndef RV_IGNORE_ALIGNMENT
 		}
+#endif
 	}
 }
 
 static void gen_mov_qword_to_reg(HostReg dest_reg,void* data) {
 	gen_addr_temp1_clobbering_temp2((Bit64s)data);
+#ifndef RV_IGNORE_ALIGNMENT
 	// alignment....
 	if (((DRC_PTR_SIZE_IM)data & 3) == 1) {
 		// -ABBCCCC|D-------
@@ -306,8 +318,11 @@ static void gen_mov_qword_to_reg(HostReg dest_reg,void* data) {
 		cache_addd(OP_OR_R(dest_reg, dest_reg, temp2));
 	} else {
 		// AAAABBBB|--------
+#endif
 		cache_addd(OP_LD_MEM_I(dest_reg, 0, temp1));
+#ifndef RV_IGNORE_ALIGNMENT
 	}
+#endif
 }
 
 // move an 8bit value from memory into dest_reg
@@ -325,6 +340,7 @@ static void gen_mov_word_from_reg(HostReg src_reg,void* dest,bool dword) {
 	gen_addr_temp1_clobbering_temp2((Bit64s)dest);
 	// alignment....
 	if (dword) {
+#ifndef RV_IGNORE_ALIGNMENT
 		if ((DRC_PTR_SIZE_IM)dest & 1) {
 			cache_addd(OP_SRLID_I(temp2, src_reg, 8));
 			cache_addd(OP_SB_MEM_S(src_reg, 0, temp1));
@@ -336,16 +352,23 @@ static void gen_mov_word_from_reg(HostReg src_reg,void* dest,bool dword) {
 			cache_addd(OP_SH_MEM_S(src_reg, 0, temp1));
 			cache_addd(OP_SH_MEM_S(temp2, 2, temp1));
 		} else {
+#endif
 			cache_addd(OP_SW_MEM_S(src_reg, 0, temp1));
+#ifndef RV_IGNORE_ALIGNMENT
 		}
+#endif
 	} else {
+#ifndef RV_IGNORE_ALIGNMENT
 		if((DRC_PTR_SIZE_IM)dest & 1) {
 			cache_addd(OP_SRLID_I(temp2, src_reg, 8));
 			cache_addd(OP_SB_MEM_S(src_reg, 0, temp1));
 			cache_addd(OP_SB_MEM_S(temp2, 1, temp1));
 		} else {
+#endif
 			cache_addd(OP_SH_MEM_S(src_reg, 0, temp1));
+#ifndef RV_IGNORE_ALIGNMENT
 		}
+#endif
 	}
 }
 
@@ -358,6 +381,7 @@ static void gen_mov_byte_from_reg_low(HostReg src_reg, void *dest)
 
 static void gen_mov_qword_from_reg(HostReg src_reg,void* dest) {
 	gen_addr_temp1_clobbering_temp2((Bit64s)dest);
+#ifndef RV_IGNORE_ALIGNMENT
 	// alignment....
 	if (((DRC_PTR_SIZE_IM)dest & 3) == 1) {
 		// -ABBCCCC|D-------
@@ -396,8 +420,11 @@ static void gen_mov_qword_from_reg(HostReg src_reg,void* dest) {
 		cache_addd(OP_SW_MEM_S(temp2, 4, temp1));
 	} else {
 		// AAAAAAAA|--------
+#endif
 		cache_addd(OP_SD_MEM_S(src_reg, 0, temp1));
+#ifndef RV_IGNORE_ALIGNMENT
 	}
+#endif
 }
 
 // add a 32bit constant value to a full register
