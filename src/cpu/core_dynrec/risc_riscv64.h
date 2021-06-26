@@ -198,7 +198,7 @@ static void unlock_temp(HostReg reg) {
 		default:
 			fprintf(stderr, "invalid temp\n");
 			__asm__("ebreak\n");
-			break;
+			return;
 	}
 	if (temps_in_use & bit_mask) {
 		temps_in_use &= ~bit_mask;
