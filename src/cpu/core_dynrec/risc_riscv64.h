@@ -39,6 +39,10 @@
 // special modifier to ignore alignment in loads/stores
 #define RV_IGNORE_ALIGNMENT
 
+// if we need inlining, put something in here to make inlining work
+// #define RV_MAYBE_INLINE
+#define RV_MAYBE_INLINE INLINE
+
 // register mapping
 typedef Bit8u HostReg;
 
@@ -96,13 +100,13 @@ typedef Bit8u HostReg;
 #define FC_OP3 HOST_a2
 
 // register that holds byte-accessible temporary values
-#define FC_TMP_BA1 HOST_a5
+#define FC_TMP_BA1 HOST_t0
 
 // register that holds byte-accessible temporary values
-#define FC_TMP_BA2 HOST_a6
+#define FC_TMP_BA2 HOST_t1
 
 // temporary register for LEA
-#define TEMP_REG_DRC HOST_a7
+#define TEMP_REG_DRC HOST_t2
 
 // instruction encodings
 
@@ -506,7 +510,7 @@ static void gen_mov_direct_dword(void* dest,Bit32u imm) {
 }
 
 // move an address into memory
-static void INLINE gen_mov_direct_ptr(void *dest, DRC_PTR_SIZE_IM imm) {
+static void RV_MAYBE_INLINE gen_mov_direct_ptr(void *dest, DRC_PTR_SIZE_IM imm) {
 	HostReg temp1 = lock_temp();
 	gen_addr_into(temp1, (Bit64s)imm);
 	gen_mov_qword_from_reg(temp1, dest);
@@ -514,7 +518,7 @@ static void INLINE gen_mov_direct_ptr(void *dest, DRC_PTR_SIZE_IM imm) {
 }
 
 // add a 32bit (dword==true) or 16bit (dword==false) constant value to a memory value
-static void INLINE gen_add_direct_word(void* dest,Bit32u imm,bool dword) {
+static void RV_MAYBE_INLINE gen_add_direct_word(void* dest,Bit32u imm,bool dword) {
 	if(!imm) return;
 	HostReg temp1 = lock_temp();
 	gen_mov_word_to_reg(temp1, dest, dword);
@@ -524,17 +528,17 @@ static void INLINE gen_add_direct_word(void* dest,Bit32u imm,bool dword) {
 }
 
 // add an 8bit constant value to a dword memory value
-static void INLINE gen_add_direct_byte(void* dest,Bit8s imm) {
+static void RV_MAYBE_INLINE gen_add_direct_byte(void* dest,Bit8s imm) {
 	gen_add_direct_word(dest, (Bit32s)imm, 1);
 }
 
 // subtract an 8bit constant value from a dword memory value
-static void INLINE gen_sub_direct_byte(void* dest,Bit8s imm) {
+static void RV_MAYBE_INLINE gen_sub_direct_byte(void* dest,Bit8s imm) {
 	gen_add_direct_word(dest, -((Bit32s)imm), 1);
 }
 
 // subtract a 32bit (dword==true) or 16bit (dword==false) constant value from a memory value
-static void INLINE gen_sub_direct_word(void* dest,Bit32u imm,bool dword) {
+static void RV_MAYBE_INLINE gen_sub_direct_word(void* dest,Bit32u imm,bool dword) {
 	gen_add_direct_word(dest, -(Bit32s)imm, dword);
 }
 
@@ -564,7 +568,7 @@ static void gen_extend_word(bool sign,HostReg reg) {
 
 
 // generate a call to a parameterless function
-static void INLINE gen_call_function_raw(void * func) {
+static void RV_MAYBE_INLINE gen_call_function_raw(void * func) {
 	HostReg temp1 = lock_temp();
 	if (((Bit64u)(cache.pos)) & 4) {
 		cache_addd(OP_AUIPC_U(HOST_ra, 0));
@@ -599,29 +603,41 @@ static void INLINE gen_call_function_raw(void * func) {
 // generate a call to a function with paramcount parameters
 // note: the parameters are loaded in the architecture specific way
 // using the gen_load_param_ functions below
-static INLINE const Bit8u* gen_call_function_setup(void * func,Bitu paramcount,bool fastcall=false) {
+static const Bit8u* RV_MAYBE_INLINE gen_call_function_setup(void * func,Bitu paramcount,bool fastcall=false) {
 	const Bit8u* proc_addr = cache.pos;
 	gen_call_function_raw(func);
 	return proc_addr;
 }
 
 // load an immediate value as param'th function parameter
-static void INLINE gen_load_param_imm(Bitu imm,Bitu param) {
+static void RV_MAYBE_INLINE gen_load_param_imm(Bitu imm,Bitu param) {
+	if (param >= 8) {
+		gen_abort_helper("out-of-range param imm");
+	}
 	gen_mov_dword_to_reg_imm(param+HOST_a0, imm);
 }
 
 // load an address as param'th function parameter
-static void INLINE gen_load_param_addr(Bitu addr,Bitu param) {
+static void RV_MAYBE_INLINE gen_load_param_addr(Bitu addr,Bitu param) {
+	if (param >= 8) {
+		gen_abort_helper("out-of-range param addr");
+	}
 	gen_mov_dword_to_reg_imm(param+HOST_a0, addr);
 }
 
 // load a host-register as param'th function parameter
-static void INLINE gen_load_param_reg(Bitu reg,Bitu param) {
+static void RV_MAYBE_INLINE gen_load_param_reg(Bitu reg,Bitu param) {
+	if (param >= 8) {
+		gen_abort_helper("out-of-range param reg");
+	}
 	gen_mov_regs(param+HOST_a0, reg);
 }
 
 // load a value from memory as param'th function parameter
-static void INLINE gen_load_param_mem(Bitu mem,Bitu param) {
+static void RV_MAYBE_INLINE gen_load_param_mem(Bitu mem,Bitu param) {
+	if (param >= 8) {
+		gen_abort_helper("out-of-range param mem");
+	}
 	gen_mov_word_to_reg(param+HOST_a0, (void *)mem, 1);
 }
 
@@ -712,18 +728,21 @@ static const Bit8u* gen_create_branch_long_leqzero(HostReg reg) {
 }
 
 // calculate relative offset and fill it into the location pointed to by data
-static void INLINE gen_fill_branch(const Bit8u* data) {
+static void RV_MAYBE_INLINE gen_fill_branch(const Bit8u* data) {
 #if C_DEBUG
 	Bits len=cache.pos-(data+0);
 	if (len<0) len=-len;
 	if (len>=0x0800) LOG_MSG("Big jump %d",len);
 #endif
 	Bit64s off = (((Bit64s)(cache.pos)) - (Bit64s)(data+0));
+	if (!(off >= -0x800L && off <= 0x7FFL)) {
+		gen_abort_helper("out-of-range branch");
+	}
 	*(Bit32u *)data |= MAKEOP_B(0x00, 0x0, HOST_zero, HOST_zero, off);
 }
 
 // calculate long relative offset and fill it into the location pointed to by data
-static void INLINE gen_fill_branch_long(const Bit8u* data) {
+static void RV_MAYBE_INLINE gen_fill_branch_long(const Bit8u* data) {
 	gen_fill_branch(data);
 }
 
@@ -737,7 +756,7 @@ static void cache_block_before_close(void) { }
 
 // move a 16bit constant value into dest_reg
 // the upper 16bit of the destination register may be destroyed
-static void INLINE gen_mov_word_to_reg_imm(HostReg dest_reg,Bit16u imm) {
+static void RV_MAYBE_INLINE gen_mov_word_to_reg_imm(HostReg dest_reg,Bit16u imm) {
 	gen_mov_dword_to_reg_imm(dest_reg, (Bit32u)imm);
 }
 
@@ -745,7 +764,7 @@ static void INLINE gen_mov_word_to_reg_imm(HostReg dest_reg,Bit16u imm) {
 // the upper 24bit of the destination register can be destroyed
 // this function can use FC_OP1/FC_OP2 as dest_reg which are
 // not directly byte-accessible on some architectures
-static void INLINE gen_mov_byte_to_reg_low_canuseword(HostReg dest_reg,void* data) {
+static void RV_MAYBE_INLINE gen_mov_byte_to_reg_low_canuseword(HostReg dest_reg,void* data) {
 	gen_mov_byte_to_reg_low(dest_reg, data);
 }
 
@@ -761,7 +780,7 @@ static void gen_mov_byte_to_reg_low_imm(HostReg dest_reg, Bit8u imm) {
 // the upper 24bit of the destination register can be destroyed
 // this function can use FC_OP1/FC_OP2 as dest_reg which are
 // not directly byte-accessible on some architectures
-static void INLINE gen_mov_byte_to_reg_low_imm_canuseword(HostReg dest_reg,Bit8u imm) {
+static void RV_MAYBE_INLINE gen_mov_byte_to_reg_low_imm_canuseword(HostReg dest_reg,Bit8u imm) {
 	gen_mov_byte_to_reg_low_imm(dest_reg, imm);
 }
 
@@ -776,7 +795,7 @@ static void gen_add(HostReg reg, void *op) {
 // effective address calculation, destination is dest_reg
 // scale_reg is scaled by scale (scale_reg*(2^scale)) and
 // added to dest_reg, then the immediate value is added
-static INLINE void gen_lea(HostReg dest_reg,HostReg scale_reg,Bitu scale,Bits imm) {
+static void RV_MAYBE_INLINE gen_lea(HostReg dest_reg,HostReg scale_reg,Bitu scale,Bits imm) {
 	if (scale) {
 		HostReg temp1 = lock_temp();
 		cache_addd(OP_SRLIW_I(temp1, scale_reg, scale));
@@ -791,7 +810,7 @@ static INLINE void gen_lea(HostReg dest_reg,HostReg scale_reg,Bitu scale,Bits im
 // effective address calculation, destination is dest_reg
 // dest_reg is scaled by scale (dest_reg*(2^scale)),
 // then the immediate value is added
-static INLINE void gen_lea(HostReg dest_reg,Bitu scale,Bits imm) {
+static void RV_MAYBE_INLINE gen_lea(HostReg dest_reg,Bitu scale,Bits imm) {
 	if (scale) {
 		cache_addd(OP_SRLIW_I(dest_reg, dest_reg, scale));
 	}
