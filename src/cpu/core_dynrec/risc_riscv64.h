@@ -431,11 +431,11 @@ static void gen_add64_imm32(HostReg reg,Bit32u imm) {
 static void gen_and_imm(HostReg reg,Bit32u imm) {
 	if (!imm) return;
 	if (((Bit32u)(imm+0x800)) <= 0x1000) {
-		cache_addd(OP_ADDIW_I(reg, reg, imm));
+		cache_addd(OP_ANDI_I(reg, reg, imm));
 	} else {
 		cache_addd(OP_LUI_U(temp2, ((imm+0x800)>>12)));
 		if ((imm&0xFFF) != 0) {
-			cache_addd(OP_ADDIW_I(reg, reg, (imm&0xFFF)));
+			cache_addd(OP_ADDIW_I(temp2, temp2, (imm&0xFFF)));
 		}
 		cache_addd(OP_AND_R(reg, reg, temp2));
 	}
