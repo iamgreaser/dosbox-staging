@@ -408,7 +408,7 @@ static void gen_add_imm(HostReg reg,Bit32u imm) {
 	} else {
 		cache_addd(OP_LUI_U(temp2, ((imm+0x800)>>12)));
 		if ((imm&0xFFF) != 0) {
-			cache_addd(OP_ADDIW_I(reg, reg, (imm&0xFFF)));
+			cache_addd(OP_ADDIW_I(temp2, temp2, (imm&0xFFF)));
 		}
 		cache_addd(OP_ADDW_R(reg, reg, temp2));
 	}
@@ -421,7 +421,7 @@ static void gen_add64_imm32(HostReg reg,Bit32u imm) {
 	} else {
 		cache_addd(OP_LUI_U(temp2, ((imm+0x800)>>12)));
 		if ((imm&0xFFF) != 0) {
-			cache_addd(OP_ADDID_I(reg, reg, (imm&0xFFF)));
+			cache_addd(OP_ADDIW_I(temp2, temp2, (imm&0xFFF)));
 		}
 		cache_addd(OP_ADDD_R(reg, reg, temp2));
 	}
