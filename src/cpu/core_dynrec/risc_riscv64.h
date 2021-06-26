@@ -161,6 +161,13 @@ typedef Bit8u HostReg;
 
 static Bit32u temps_in_use = 0;
 
+#define RV_CONST_POOL_ENTRY_MAX 256
+struct rv_const_pool_entry {
+	Bit32u *auipc_loc;
+	Bit64s const_value;
+} rv_const_pool[RV_CONST_POOL_ENTRY_MAX];
+static Bit32u rv_const_pool_idx = 0;
+
 static HostReg lock_temp(void) {
 	if (!(temps_in_use & 0x1)) {
 		temps_in_use |= 0x1;
@@ -210,9 +217,32 @@ static void unlock_temp(HostReg reg) {
 	}
 }
 
+// generate a constant pool
+static void gen_constant_pool_helper(void) {
+	// first do an alignment
+	if ((Bit64u)cache.pos & 1) { cache_addb(0); }
+	if ((Bit64u)cache.pos & 2) { cache_addw(0); }
+	if ((Bit64u)cache.pos & 4) { cache_addd(0); }
+
+	// then swim through the constant pool
+	for (Bit32u idx = 0; idx < rv_const_pool_idx; idx++) {
+		Bit64s const_loc = (Bit64s)(cache.pos);
+		cache_addd((Bit32s)(rv_const_pool[idx].const_value));
+		cache_addd((Bit32s)(rv_const_pool[idx].const_value >> 32L));
+		Bit32u *auipc_loc = rv_const_pool[idx].auipc_loc;
+		Bit64s pc = (Bit64s)auipc_loc;
+		Bit64s delta = (const_loc - pc);
+		auipc_loc[0] |= OP_AUIPC_U(HOST_zero, ((delta+0x800)>>12));
+		auipc_loc[1] |= OP_LD_MEM_I(HOST_zero, (delta&0xFFF), HOST_zero);
+	}
+
+	// finally flush the pool
+	rv_const_pool_idx = 0;
+}
+
 // move a full register from reg_src to reg_dst
 static void gen_mov_regs(HostReg reg_dst,HostReg reg_src) {
-	if(reg_src == reg_dst) return; 
+	if(reg_src == reg_dst) return;
 	cache_addd(OP_ADDID_I(reg_dst, reg_src, 0));
 }
 
@@ -236,6 +266,16 @@ static void gen_addr_direct(HostReg dest_reg, HostReg base_reg, Bit64s addr) {
 		// 32 bits
 		cache_addd(OP_LUI_U(dest_reg, 0xFFFFF&((addr+0x800)>>12)));
 		cache_addd(OP_ADDIW_I(dest_reg, dest_reg, 0xFFF&(addr)));
+		if (base_reg != HOST_zero) {
+			cache_addd(OP_ADDD_R(dest_reg, dest_reg, base_reg));
+		}
+	} else if (rv_const_pool_idx < RV_CONST_POOL_ENTRY_MAX) {
+		// Add a value to the constant pool
+		rv_const_pool[rv_const_pool_idx].auipc_loc = (Bit32u *)(cache.pos);
+		rv_const_pool[rv_const_pool_idx].const_value = addr;
+		rv_const_pool_idx += 1;
+		cache_addd(OP_AUIPC_U(dest_reg, 0));
+		cache_addd(OP_LD_MEM_I(dest_reg, 0, dest_reg));
 		if (base_reg != HOST_zero) {
 			cache_addd(OP_ADDD_R(dest_reg, dest_reg, base_reg));
 		}
@@ -698,6 +738,8 @@ static void gen_return_function(void) {
 	cache_addd(OP_LD_MEM_I(readdata_addr, (8*4), HOST_sp));
 	cache_addd(OP_ADDID_I(HOST_sp, HOST_sp, (8*6)));
 	cache_addd(OP_JALR_I(HOST_zero, HOST_ra, 0));
+
+	gen_constant_pool_helper();
 }
 
 static void INLINE gen_jmp_ptr(void * ptr,Bits imm=0) {
