@@ -104,15 +104,6 @@ typedef Bit8u HostReg;
 // temporary register for LEA
 #define TEMP_REG_DRC HOST_a7
 
-// used to hold the address of "cpu_regs" - preferably filled in function gen_run_code
-#define FC_REGS_ADDR HOST_s1
-
-// used to hold the address of "Segs" - preferably filled in function gen_run_code
-#define FC_SEGS_ADDR HOST_s2
-
-// used to hold the address of "core_dynrec.readdata" - filled in function gen_run_code
-#define readdata_addr HOST_s3
-
 // instruction encodings
 
 #define MAKEOP_R(OPCODE, F3, F7, RD, RS1, RS2) (((OPCODE)&0x7F)|(((RD)&0x1F)<<7)|(((F3)&0x7)<<12)|(((RS1)&0x1F)<<15)|(((RS2)&0x1F)<<20)|(((F7)&0x7F)<<25))
@@ -297,22 +288,6 @@ static void gen_addr_direct(HostReg dest_reg, HostReg base_reg, Bit64s addr) {
 }
 
 static void gen_addr_into(HostReg dest_reg, Bit64s addr) {
-	Bit64s delta_Regs = addr-(Bit64s)&cpu_regs;
-	if (delta_Regs >= -0x80000000L && delta_Regs <= 0x7FFFFFFFL) {
-		gen_addr_direct(dest_reg, FC_REGS_ADDR, delta_Regs);
-		return;
-	}
-	Bit64s delta_Segs = addr-(Bit64s)&Segs;
-	if (delta_Segs >= -0x80000000L && delta_Segs <= 0x7FFFFFFFL) {
-		gen_addr_direct(dest_reg, FC_SEGS_ADDR, delta_Segs);
-		return;
-	}
-	Bit64s delta_readdata = addr-(Bit64s)&core_dynrec.readdata;
-	if (delta_readdata >= -0x80000000L && delta_readdata <= 0x7FFFFFFFL) {
-		gen_addr_direct(dest_reg, readdata_addr, delta_readdata);
-		return;
-	}
-
 	gen_addr_direct(dest_reg, HOST_zero, addr);
 }
 
@@ -713,17 +688,9 @@ static void INLINE gen_load_param_mem(Bitu mem,Bitu param) {
 static void gen_run_code(void) {
 	printf("cache pos gen_run_code %p\n", (void *)cache.pos);
 
-	cache_addd(OP_ADDID_I(HOST_sp, HOST_sp, (-(8*6))));
+	cache_addd(OP_ADDID_I(HOST_sp, HOST_sp, (-(8*2))));
 	cache_addd(OP_SD_MEM_S(HOST_ra, (8*0), HOST_sp));
 	cache_addd(OP_SD_MEM_S(HOST_s0, (8*1), HOST_sp));
-	cache_addd(OP_SD_MEM_S(FC_SEGS_ADDR, (8*2), HOST_sp));
-	cache_addd(OP_SD_MEM_S(FC_REGS_ADDR, (8*3), HOST_sp));
-	cache_addd(OP_SD_MEM_S(readdata_addr, (8*4), HOST_sp));
-
-	gen_addr_direct(FC_SEGS_ADDR, HOST_zero, (Bit64s)&Segs);
-	gen_addr_direct(FC_REGS_ADDR, HOST_zero, (Bit64s)&cpu_regs);
-	gen_addr_direct(readdata_addr, HOST_zero, (Bit64s)&core_dynrec.readdata);
-
 	cache_addd(OP_JALR_I(HOST_zero, HOST_a0, 0));
 }
 
@@ -733,10 +700,7 @@ static void gen_return_function(void) {
 
 	cache_addd(OP_LD_MEM_I(HOST_ra, (8*0), HOST_sp));
 	cache_addd(OP_LD_MEM_I(HOST_s0, (8*1), HOST_sp));
-	cache_addd(OP_LD_MEM_I(FC_SEGS_ADDR, (8*2), HOST_sp));
-	cache_addd(OP_LD_MEM_I(FC_REGS_ADDR, (8*3), HOST_sp));
-	cache_addd(OP_LD_MEM_I(readdata_addr, (8*4), HOST_sp));
-	cache_addd(OP_ADDID_I(HOST_sp, HOST_sp, (8*6)));
+	cache_addd(OP_ADDID_I(HOST_sp, HOST_sp, (8*2)));
 	cache_addd(OP_JALR_I(HOST_zero, HOST_ra, 0));
 
 	gen_constant_pool_helper();
