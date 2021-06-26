@@ -159,6 +159,13 @@ struct rv_const_pool_entry {
 } rv_const_pool[RV_CONST_POOL_ENTRY_MAX];
 static Bit32u rv_const_pool_idx = 0;
 
+static void gen_abort_helper(const char *msg) {
+	fprintf(stderr, "%s\n", msg);
+	__asm__("ebreak\n");
+	abort();
+	for (;;) {}
+}
+
 static HostReg lock_temp(void) {
 	if (!(temps_in_use & 0x1)) {
 		temps_in_use |= 0x1;
@@ -176,8 +183,7 @@ static HostReg lock_temp(void) {
 		temps_in_use |= 0x8;
 		return HOST_t6;
 	}
-	fprintf(stderr, "no more temp regs\n");
-	__asm__("ebreak\n");
+	gen_abort_helper("no more temp regs");
 }
 static void unlock_temp(HostReg reg) {
 	Bit32u bit_mask;
@@ -196,15 +202,13 @@ static void unlock_temp(HostReg reg) {
 			bit_mask = (1<<3U);
 			break;
 		default:
-			fprintf(stderr, "invalid temp\n");
-			__asm__("ebreak\n");
+			gen_abort_helper("invalid temp");
 			return;
 	}
 	if (temps_in_use & bit_mask) {
 		temps_in_use &= ~bit_mask;
 	} else {
-		fprintf(stderr, "temp double-freed\n");
-		__asm__("ebreak\n");
+		gen_abort_helper("temp double-freed");
 	}
 }
 
@@ -291,111 +295,120 @@ static void gen_addr_into(HostReg dest_reg, Bit64s addr) {
 	gen_addr_direct(dest_reg, HOST_zero, addr);
 }
 
+// load a potentially-unaligned 8bit value from memory
+// offs is from -0x800 to +0x7FF
+static void gen_load_byte_helper(HostReg dest_reg, HostReg mem_reg, Bit64s offs, Bit32s align) {
+	if (!(offs >= -0x800L && offs <= 0x7FFL)) {
+		gen_abort_helper("offs out of range");
+		return;
+	}
+
+	// 8bit values cannot be unaligned.
+	cache_addd(OP_LBU_MEM_I(dest_reg, offs, mem_reg));
+}
+
+// load a potentially-unaligned 16bit value from memory
+// offs is from -0x800 to +0x7FE
+static void gen_load_word_helper(HostReg dest_reg, HostReg mem_reg, Bit64s offs, Bit32s align) {
+	if (!(offs >= -0x800L && offs <= 0x7FEL)) {
+		gen_abort_helper("offs out of range");
+		return;
+	}
+
+	// TODO: unaligned handlers --GM
+	cache_addd(OP_LHU_MEM_I(dest_reg, offs, mem_reg));
+}
+
+// load a potentially-unaligned 32bit value from memory
+// offs is from -0x800 to +0x7FC
+static void gen_load_dword_helper(HostReg dest_reg, HostReg mem_reg, Bit64s offs, Bit32s align) {
+	if (!(offs >= -0x800L && offs <= 0x7FCL)) {
+		gen_abort_helper("offs out of range");
+		return;
+	}
+
+	// TODO: unaligned handlers --GM
+	cache_addd(OP_LW_MEM_I(dest_reg, offs, mem_reg));
+}
+
+// load a potentially-unaligned 64bit value from memory
+// offs is from -0x800 to +0x7F8
+static void gen_load_qword_helper(HostReg dest_reg, HostReg mem_reg, Bit64s offs, Bit32s align) {
+	if (!(offs >= -0x800L && offs <= 0x7F8L)) {
+		gen_abort_helper("offs out of range");
+		return;
+	}
+
+	// TODO: unaligned handlers --GM
+	cache_addd(OP_LD_MEM_I(dest_reg, offs, mem_reg));
+}
+
+// store a potentially-unaligned 8bit value to memory
+// offs is from -0x800 to +0x7FF
+static void gen_store_byte_helper(HostReg src_reg, HostReg mem_reg, Bit64s offs, Bit32s align) {
+	if (!(offs >= -0x800L && offs <= 0x7FFL)) {
+		gen_abort_helper("offs out of range");
+		return;
+	}
+
+	// 8bit values cannot be unaligned.
+	cache_addd(OP_SB_MEM_S(src_reg, offs, mem_reg));
+}
+
+// store a potentially-unaligned 16bit value to memory
+// offs is from -0x800 to +0x7FE
+static void gen_store_word_helper(HostReg src_reg, HostReg mem_reg, Bit64s offs, Bit32s align) {
+	if (!(offs >= -0x800L && offs <= 0x7FEL)) {
+		gen_abort_helper("offs out of range");
+		return;
+	}
+
+	// TODO: unaligned handlers --GM
+	cache_addd(OP_SH_MEM_S(src_reg, offs, mem_reg));
+}
+
+// store a potentially-unaligned 32bit value to memory
+// offs is from -0x800 to +0x7FC
+static void gen_store_dword_helper(HostReg src_reg, HostReg mem_reg, Bit64s offs, Bit32s align) {
+	if (!(offs >= -0x800L && offs <= 0x7FCL)) {
+		gen_abort_helper("offs out of range");
+		return;
+	}
+
+	// TODO: unaligned handlers --GM
+	cache_addd(OP_SW_MEM_S(src_reg, offs, mem_reg));
+}
+
+// store a potentially-unaligned 64bit value to memory
+// offs is from -0x800 to +0x7F8
+static void gen_store_qword_helper(HostReg src_reg, HostReg mem_reg, Bit64s offs, Bit32s align) {
+	if (!(offs >= -0x800L && offs <= 0x7F8L)) {
+		gen_abort_helper("offs out of range");
+		return;
+	}
+
+	// TODO: unaligned handlers --GM
+	cache_addd(OP_SD_MEM_S(src_reg, offs, mem_reg));
+}
+
 
 // move a 32bit (dword==true) or 16bit (dword==false) value from memory into dest_reg
 // 16bit moves may destroy the upper 16bit of the destination register
 static void gen_mov_word_to_reg(HostReg dest_reg,void* data,bool dword) {
-	// alignment....
 	HostReg temp1 = lock_temp();
-	HostReg temp2 = lock_temp();
 	gen_addr_into(temp1, (Bit64s)data);
 	if (dword) {
-#ifndef RV_IGNORE_ALIGNMENT
-		if ((DRC_PTR_SIZE_IM)data & 1) {
-			cache_addd(OP_LBU_MEM_I(dest_reg, 0, temp1));
-			cache_addd(OP_LHU_MEM_I(temp2, 1, temp1));
-			cache_addd(OP_SLLID_I(temp2, temp2, 8));
-			cache_addd(OP_OR_R(dest_reg, dest_reg, temp2));
-			cache_addd(OP_LB_MEM_I(temp2, 3, temp1));
-			cache_addd(OP_SLLID_I(temp2, temp2, 24));
-			cache_addd(OP_OR_R(dest_reg, dest_reg, temp2));
-		} else if ((DRC_PTR_SIZE_IM)data & 2) {
-			cache_addd(OP_LHU_MEM_I(dest_reg, 0, temp1));
-			cache_addd(OP_LH_MEM_I(temp2, 2, temp1));
-			cache_addd(OP_SLLID_I(temp2, temp2, 16));
-			cache_addd(OP_OR_R(dest_reg, dest_reg, temp2));
-		} else {
-#endif
-			cache_addd(OP_LW_MEM_I(dest_reg, 0, temp1));
-#ifndef RV_IGNORE_ALIGNMENT
-		}
-#endif
+		gen_load_dword_helper(dest_reg, temp1, 0, ((Bit64s)data) & 3);
 	} else {
-#ifndef RV_IGNORE_ALIGNMENT
-		if ((DRC_PTR_SIZE_IM)data & 1) {
-			cache_addd(OP_LBU_MEM_I(dest_reg, 0, temp1));
-			cache_addd(OP_LBU_MEM_I(temp2, 1, temp1));
-			cache_addd(OP_SLLID_I(temp2, temp2, 8));
-			cache_addd(OP_OR_R(dest_reg, dest_reg, temp2));
-		} else {
-#endif
-			cache_addd(OP_LHU_MEM_I(dest_reg, 0, temp1));
-#ifndef RV_IGNORE_ALIGNMENT
-		}
-#endif
+		gen_load_word_helper(dest_reg, temp1, 0, ((Bit64s)data) & 1);
 	}
-	unlock_temp(temp2);
 	unlock_temp(temp1);
 }
 
 static void gen_mov_qword_to_reg(HostReg dest_reg,void* data) {
 	HostReg temp1 = lock_temp();
-	HostReg temp2 = lock_temp();
 	gen_addr_into(temp1, (Bit64s)data);
-#ifndef RV_IGNORE_ALIGNMENT
-	// alignment....
-	if (((DRC_PTR_SIZE_IM)data & 3) == 1) {
-		// -ABBCCCC|D-------
-		// -----ABB|CCCCD---
-		cache_addd(OP_LBU_MEM_I(dest_reg, 0, temp1));
-		cache_addd(OP_LHU_MEM_I(temp2, 1, temp1));
-		cache_addd(OP_SLLID_I(temp2, dest_reg, 8));
-		cache_addd(OP_OR_R(dest_reg, dest_reg, temp2));
-		cache_addd(OP_LWU_MEM_I(temp2, 3, temp1));
-		cache_addd(OP_SLLID_I(temp2, dest_reg, 24));
-		cache_addd(OP_OR_R(dest_reg, dest_reg, temp2));
-		cache_addd(OP_LB_MEM_I(temp2, 7, temp1));
-		cache_addd(OP_SLLID_I(temp2, dest_reg, 56));
-		cache_addd(OP_OR_R(dest_reg, dest_reg, temp2));
-
-	} else if (((DRC_PTR_SIZE_IM)data & 3) == 3) {
-		// ---ABBBB|CCD-----
-		// -------A|BBBBCCD-
-		cache_addd(OP_LBU_MEM_I(dest_reg, 0, temp1));
-		cache_addd(OP_LWU_MEM_I(temp2, 1, temp1));
-		cache_addd(OP_SLLID_I(temp2, dest_reg, 8));
-		cache_addd(OP_OR_R(dest_reg, dest_reg, temp2));
-		cache_addd(OP_LHU_MEM_I(temp2, 5, temp1));
-		cache_addd(OP_SLLID_I(temp2, dest_reg, 40));
-		cache_addd(OP_OR_R(dest_reg, dest_reg, temp2));
-		cache_addd(OP_LB_MEM_I(temp2, 7, temp1));
-		cache_addd(OP_SLLID_I(temp2, dest_reg, 56));
-		cache_addd(OP_OR_R(dest_reg, dest_reg, temp2));
-
-	} else if ((DRC_PTR_SIZE_IM)data & 2) {
-		// --AABBBB|CC------
-		// ------AA|BBBBCC--
-		cache_addd(OP_LHU_MEM_I(dest_reg, 0, temp1));
-		cache_addd(OP_LWU_MEM_I(temp2, 2, temp1));
-		cache_addd(OP_SRLID_I(temp2, dest_reg, 16));
-		cache_addd(OP_OR_R(dest_reg, dest_reg, temp2));
-		cache_addd(OP_LH_MEM_I(temp2, 6, temp1));
-		cache_addd(OP_SRLID_I(temp2, dest_reg, 48));
-		cache_addd(OP_OR_R(dest_reg, dest_reg, temp2));
-	} else if ((DRC_PTR_SIZE_IM)data & 4) {
-		// ----AAAA|BBBB----
-		cache_addd(OP_LWU_MEM_I(dest_reg, 0, temp1));
-		cache_addd(OP_LW_MEM_I(temp2, 4, temp1));
-		cache_addd(OP_SRLID_I(temp2, dest_reg, 32));
-		cache_addd(OP_OR_R(dest_reg, dest_reg, temp2));
-	} else {
-		// AAAABBBB|--------
-#endif
-		cache_addd(OP_LD_MEM_I(dest_reg, 0, temp1));
-#ifndef RV_IGNORE_ALIGNMENT
-	}
-#endif
-	unlock_temp(temp2);
+	gen_load_qword_helper(dest_reg, temp1, 0, ((Bit64s)data) & 7);
 	unlock_temp(temp1);
 }
 
@@ -403,113 +416,37 @@ static void gen_mov_qword_to_reg(HostReg dest_reg,void* data) {
 // the upper 24bit of the destination register can be destroyed
 // this function does not use FC_OP1/FC_OP2 as dest_reg as these
 // registers might not be directly byte-accessible on some architectures
-static void gen_mov_byte_to_reg_low(HostReg dest_reg, void *data)
-{
+static void gen_mov_byte_to_reg_low(HostReg dest_reg, void *data) {
 	HostReg temp1 = lock_temp();
 	gen_addr_into(temp1, (Bit64s)data);
-	cache_addd(OP_LBU_MEM_I(dest_reg, 0, temp1));
+	gen_load_byte_helper(dest_reg, temp1, 0, 0);
 	unlock_temp(temp1);
 }
 
 // move 32bit (dword==true) or 16bit (dword==false) of a register into memory
 static void gen_mov_word_from_reg(HostReg src_reg,void* dest,bool dword) {
 	HostReg temp1 = lock_temp();
-	HostReg temp2 = lock_temp();
 	gen_addr_into(temp1, (Bit64s)dest);
-	// alignment....
 	if (dword) {
-#ifndef RV_IGNORE_ALIGNMENT
-		if ((DRC_PTR_SIZE_IM)dest & 1) {
-			cache_addd(OP_SRLID_I(temp2, src_reg, 8));
-			cache_addd(OP_SB_MEM_S(src_reg, 0, temp1));
-			cache_addd(OP_SH_MEM_S(temp2, 1, temp1));
-			cache_addd(OP_SRLID_I(temp2, src_reg, 24));
-			cache_addd(OP_SB_MEM_S(temp2, 3, temp1));
-		} else if ((DRC_PTR_SIZE_IM)dest & 2) {
-			cache_addd(OP_SRLID_I(temp2, src_reg, 16));
-			cache_addd(OP_SH_MEM_S(src_reg, 0, temp1));
-			cache_addd(OP_SH_MEM_S(temp2, 2, temp1));
-		} else {
-#endif
-			cache_addd(OP_SW_MEM_S(src_reg, 0, temp1));
-#ifndef RV_IGNORE_ALIGNMENT
-		}
-#endif
+		gen_store_dword_helper(src_reg, temp1, 0, ((Bit64s)dest) & 3);
 	} else {
-#ifndef RV_IGNORE_ALIGNMENT
-		if((DRC_PTR_SIZE_IM)dest & 1) {
-			cache_addd(OP_SRLID_I(temp2, src_reg, 8));
-			cache_addd(OP_SB_MEM_S(src_reg, 0, temp1));
-			cache_addd(OP_SB_MEM_S(temp2, 1, temp1));
-		} else {
-#endif
-			cache_addd(OP_SH_MEM_S(src_reg, 0, temp1));
-#ifndef RV_IGNORE_ALIGNMENT
-		}
-#endif
+		gen_store_word_helper(src_reg, temp1, 0, ((Bit64s)dest) & 1);
 	}
-	unlock_temp(temp2);
 	unlock_temp(temp1);
 }
 
 // move the lowest 8bit of a register into memory
-static void gen_mov_byte_from_reg_low(HostReg src_reg, void *dest)
-{
+static void gen_mov_byte_from_reg_low(HostReg src_reg, void *dest) {
 	HostReg temp1 = lock_temp();
 	gen_addr_into(temp1, (Bit64s)dest);
-	cache_addd(OP_SB_MEM_S(src_reg, 0, temp1));
+	gen_store_byte_helper(src_reg, temp1, 0, 0);
 	unlock_temp(temp1);
 }
 
 static void gen_mov_qword_from_reg(HostReg src_reg,void* dest) {
 	HostReg temp1 = lock_temp();
-	HostReg temp2 = lock_temp();
 	gen_addr_into(temp1, (Bit64s)dest);
-#ifndef RV_IGNORE_ALIGNMENT
-	// alignment....
-	if (((DRC_PTR_SIZE_IM)dest & 3) == 1) {
-		// -ABBCCCC|D-------
-		// -----ABB|CCCCD---
-		cache_addd(OP_SRLID_I(temp2, src_reg, 8));
-		cache_addd(OP_SB_MEM_S(src_reg, 0, temp1));
-		cache_addd(OP_SH_MEM_S(temp2, 1, temp1));
-		cache_addd(OP_SRLID_I(temp2, src_reg, 24));
-		cache_addd(OP_SW_MEM_S(temp2, 3, temp1));
-		cache_addd(OP_SRLID_I(temp2, src_reg, 56));
-		cache_addd(OP_SB_MEM_S(temp2, 7, temp1));
-
-	} else if (((DRC_PTR_SIZE_IM)dest & 3) == 3) {
-		// ---ABBBB|CCD-----
-		// -------A|BBBBCCD-
-		cache_addd(OP_SRLID_I(temp2, src_reg, 8));
-		cache_addd(OP_SB_MEM_S(src_reg, 0, temp1));
-		cache_addd(OP_SW_MEM_S(temp2, 1, temp1));
-		cache_addd(OP_SRLID_I(temp2, src_reg, 40));
-		cache_addd(OP_SH_MEM_S(temp2, 5, temp1));
-		cache_addd(OP_SRLID_I(temp2, src_reg, 56));
-		cache_addd(OP_SB_MEM_S(temp2, 7, temp1));
-
-	} else if ((DRC_PTR_SIZE_IM)dest & 2) {
-		// --AABBBB|CC------
-		// ------AA|BBBBCC--
-		cache_addd(OP_SRLID_I(temp2, src_reg, 16));
-		cache_addd(OP_SH_MEM_S(src_reg, 0, temp1));
-		cache_addd(OP_SW_MEM_S(temp2, 2, temp1));
-		cache_addd(OP_SRLID_I(temp2, src_reg, 48));
-		cache_addd(OP_SH_MEM_S(temp2, 6, temp1));
-	} else if ((DRC_PTR_SIZE_IM)dest & 4) {
-		// ----AAAA|BBBB----
-		cache_addd(OP_SRLID_I(temp2, src_reg, 32));
-		cache_addd(OP_SW_MEM_S(src_reg, 0, temp1));
-		cache_addd(OP_SW_MEM_S(temp2, 4, temp1));
-	} else {
-		// AAAAAAAA|--------
-#endif
-		cache_addd(OP_SD_MEM_S(src_reg, 0, temp1));
-#ifndef RV_IGNORE_ALIGNMENT
-	}
-#endif
-	unlock_temp(temp2);
+	gen_load_qword_helper(src_reg, temp1, 0, ((Bit64s)dest) & 7);
 	unlock_temp(temp1);
 }
 
@@ -641,6 +578,9 @@ static void INLINE gen_call_function_raw(void * func) {
 		cache_addd((Bit32s)(((Bit64s)func)));
 		cache_addd((Bit32s)(((Bit64s)func)>>32));
 	} else {
+		if (((Bit64u)(cache.pos)) & 7) {
+			gen_abort_helper("compressed instructions not supported yet");
+		}
 		// 0
 		cache_addd(OP_AUIPC_U(HOST_ra, 0));
 		cache_addd(OP_LD_MEM_I(temp1, 16, HOST_ra));
@@ -711,8 +651,7 @@ static void gen_jmp_ptr(void * ptr,Bits imm=0) {
 	gen_mov_qword_to_reg(temp1, ptr);
 	gen_add64_imm32(temp1, imm);
 
-	// TODO: Ensure alignment if we care about speed --GM
-	cache_addd(OP_LD_MEM_I(temp1, 0, temp1));
+	gen_load_qword_helper(temp1, temp1, 0, -1);
 	cache_addd(OP_JALR_I(HOST_zero, temp1, 0));
 	unlock_temp(temp1);
 
@@ -722,8 +661,7 @@ static void gen_jmp_ptr(void * ptr,Bits imm=0) {
 
 // short conditional jump (+-127 bytes) if register is zero
 // the destination is set by gen_fill_branch() later
-static Bit8u* gen_create_branch_on_zero(HostReg reg, bool dword)
-{
+static Bit8u* gen_create_branch_on_zero(HostReg reg, bool dword) {
 	HostReg temp1 = lock_temp();
 	if (dword) {
 		cache_addd( OP_ADDIW_I(temp1, reg, 0) );
@@ -737,8 +675,7 @@ static Bit8u* gen_create_branch_on_zero(HostReg reg, bool dword)
 
 // short conditional jump (+-127 bytes) if register is nonzero
 // the destination is set by gen_fill_branch() later
-static Bit8u* gen_create_branch_on_nonzero(HostReg reg, bool dword)
-{
+static Bit8u* gen_create_branch_on_nonzero(HostReg reg, bool dword) {
 	HostReg temp1 = lock_temp();
 	if (dword) {
 		cache_addd( OP_ADDIW_I(temp1, reg, 0) );
@@ -753,8 +690,7 @@ static Bit8u* gen_create_branch_on_nonzero(HostReg reg, bool dword)
 // conditional jump if register is nonzero
 // for isdword==true the 32bit of the register are tested
 // for isdword==false the lowest 8bit of the register are tested
-static Bit8u* gen_create_branch_long_nonzero(HostReg reg, bool dword)
-{
+static Bit8u* gen_create_branch_long_nonzero(HostReg reg, bool dword) {
 	HostReg temp1 = lock_temp();
 	if (dword) {
 		cache_addd( OP_ADDIW_I(temp1, reg, 0) );
@@ -791,8 +727,7 @@ static void INLINE gen_fill_branch_long(const Bit8u* data) {
 	gen_fill_branch(data);
 }
 
-static void cache_block_closing(const uint8_t *block_start, Bitu block_size)
-{
+static void cache_block_closing(const uint8_t *block_start, Bitu block_size) {
 	// FIXME: Work out how to invalidate the cache properly --GM
 	asm volatile("fence\n");
 	asm volatile("fence.i\n");
@@ -831,8 +766,7 @@ static void INLINE gen_mov_byte_to_reg_low_imm_canuseword(HostReg dest_reg,Bit8u
 }
 
 // add a 32bit value from memory to a full register
-static void gen_add(HostReg reg, void *op)
-{
+static void gen_add(HostReg reg, void *op) {
 	HostReg temp1 = lock_temp();
 	gen_mov_word_to_reg(temp1, op, true);
 	cache_addd(OP_ADDW_R(reg, reg, temp1));
