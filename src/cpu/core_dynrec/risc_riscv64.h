@@ -534,7 +534,7 @@ static void INLINE gen_call_function_raw(void * func) {
 	if (((Bit64u)(cache.pos)) & 4) {
 		cache_addd(OP_AUIPC_U(HOST_ra, 0));
 		// 0
-		cache_addd(OP_LD_MEM_I(temp1, HOST_ra, 20));
+		cache_addd(OP_LD_MEM_I(temp1, 20, HOST_ra));
 		cache_addd(OP_ADDID_I(HOST_ra, HOST_ra, 28));
 		// 0
 		cache_addd(OP_JALR_I(HOST_zero, temp1, 0));
@@ -545,7 +545,7 @@ static void INLINE gen_call_function_raw(void * func) {
 	} else {
 		// 0
 		cache_addd(OP_AUIPC_U(HOST_ra, 0));
-		cache_addd(OP_LD_MEM_I(temp1, HOST_ra, 16));
+		cache_addd(OP_LD_MEM_I(temp1, 16, HOST_ra));
 		// 0
 		cache_addd(OP_ADDID_I(HOST_ra, HOST_ra, 28));
 		cache_addd(OP_JALR_I(HOST_zero, temp1, 0));
@@ -628,11 +628,11 @@ static void INLINE gen_jmp_ptr(void * ptr,Bits imm=0) {
 static Bit8u* gen_create_branch_on_zero(HostReg reg, bool dword)
 {
 	if (dword) {
-		cache_addd( OP_ADDIW_I(temp1, reg, 0) );
+		cache_addd( OP_ADDIW_I(temp2, reg, 0) );
 	} else {
-		cache_addd( OP_SLLID_I(temp1, reg, 48) );
+		cache_addd( OP_SLLID_I(temp2, reg, 48) );
 	}
-	cache_addd( OP_BEQ_B(HOST_zero, temp1, 0) );
+	cache_addd( OP_BEQ_B(HOST_zero, temp2, 0) );
 	return (Bit8u *)(cache.pos-4);
 }
 
@@ -641,11 +641,11 @@ static Bit8u* gen_create_branch_on_zero(HostReg reg, bool dword)
 static Bit8u* gen_create_branch_on_nonzero(HostReg reg, bool dword)
 {
 	if (dword) {
-		cache_addd( OP_ADDIW_I(temp1, reg, 0) );
+		cache_addd( OP_ADDIW_I(temp2, reg, 0) );
 	} else {
-		cache_addd( OP_SLLID_I(temp1, reg, 48) );
+		cache_addd( OP_SLLID_I(temp2, reg, 48) );
 	}
-	cache_addd( OP_BNE_B(HOST_zero, temp1, 0) );
+	cache_addd( OP_BNE_B(HOST_zero, temp2, 0) );
 	return (Bit8u *)(cache.pos-4);
 }
 
@@ -655,18 +655,18 @@ static Bit8u* gen_create_branch_on_nonzero(HostReg reg, bool dword)
 static Bit8u* gen_create_branch_long_nonzero(HostReg reg, bool dword)
 {
 	if (dword) {
-		cache_addd( OP_ADDIW_I(temp1, reg, 0) );
+		cache_addd( OP_ADDIW_I(temp2, reg, 0) );
 	} else {
-		cache_addd( OP_ANDI_I(temp1, reg, 0x0FF) );
+		cache_addd( OP_ANDI_I(temp2, reg, 0x0FF) );
 	}
-	cache_addd( OP_BNE_B(HOST_zero, temp1, 0) );
+	cache_addd( OP_BNE_B(HOST_zero, temp2, 0) );
 	return (Bit8u *)(cache.pos-4);
 }
 
 // compare 32bit-register against zero and jump if value less/equal than zero
 static const Bit8u* gen_create_branch_long_leqzero(HostReg reg) {
-	cache_addd( OP_ADDIW_I(temp1, reg, 0) );
-	cache_addd( OP_BGE_B(HOST_zero, temp1, 0) );
+	cache_addd( OP_ADDIW_I(temp2, reg, 0) );
+	cache_addd( OP_BGE_B(HOST_zero, temp2, 0) );
 	return (Bit8u *)(cache.pos-4);
 }
 
