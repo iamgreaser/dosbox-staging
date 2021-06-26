@@ -706,12 +706,17 @@ static void gen_return_function(void) {
 	gen_constant_pool_helper();
 }
 
-static void INLINE gen_jmp_ptr(void * ptr,Bits imm=0) {
+static void gen_jmp_ptr(void * ptr,Bits imm=0) {
 	HostReg temp1 = lock_temp();
 	gen_mov_qword_to_reg(temp1, ptr);
 	gen_add64_imm32(temp1, imm);
+
+	// TODO: Ensure alignment if we care about speed --GM
+	cache_addd(OP_LD_MEM_I(temp1, 0, temp1));
 	cache_addd(OP_JALR_I(HOST_zero, temp1, 0));
 	unlock_temp(temp1);
+
+	gen_constant_pool_helper();
 }
 
 
