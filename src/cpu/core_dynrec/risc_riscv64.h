@@ -147,6 +147,8 @@ typedef Bit8u HostReg;
 #define OP_SRAIW_I(RD, RS1, SHAMT) MAKEOP_I(0x33, 0x5, RD, RS1, ((SHAMT)&0x1F)|0x400)
 #define OP_ADDD_R(RD, RS1, RS2) MAKEOP_R(0x33, 0x0, 0x00, RD, RS1, RS2)
 #define OP_ADDW_R(RD, RS1, RS2) MAKEOP_R(0x3B, 0x0, 0x00, RD, RS1, RS2)
+#define OP_SUBD_R(RD, RS1, RS2) MAKEOP_R(0x33, 0x0, 0x20, RD, RS1, RS2)
+#define OP_SUBW_R(RD, RS1, RS2) MAKEOP_R(0x3B, 0x0, 0x20, RD, RS1, RS2)
 #define OP_XOR_R(RD, RS1, RS2) MAKEOP_R(0x33, 0x4, 0x00, RD, RS1, RS2)
 #define OP_OR_R(RD, RS1, RS2) MAKEOP_R(0x33, 0x6, 0x00, RD, RS1, RS2)
 #define OP_AND_R(RD, RS1, RS2) MAKEOP_R(0x33, 0x7, 0x00, RD, RS1, RS2)
@@ -840,6 +842,18 @@ static void gen_fill_function_ptr(const Bit8u * pos,void* fct_ptr,Bitu flags_typ
 		case t_ADDw:
 		case t_ADDd:
 			data[0] = OP_ADDW_R(FC_RETOP, HOST_a1, HOST_a2);
+			data[1] = OP_NOP();
+			data[2] = OP_NOP();
+			data[3] = OP_NOP();
+			data[4] = OP_NOP();
+			data[5] = OP_NOP();
+			data[6] = OP_NOP();
+			break;
+
+		case t_SUBb:
+		case t_SUBw:
+		case t_SUBd:
+			data[0] = OP_SUBW_R(FC_RETOP, HOST_a1, HOST_a2);
 			data[1] = OP_NOP();
 			data[2] = OP_NOP();
 			data[3] = OP_NOP();
