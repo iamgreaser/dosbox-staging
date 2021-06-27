@@ -389,7 +389,6 @@ static void gen_store_dword_helper(HostReg src_reg, HostReg mem_reg, Bit64s offs
 	cache_addd(OP_SW_MEM_S(src_reg, offs, mem_reg));
 }
 
-#if 0
 // store a potentially-unaligned 64bit value to memory
 // offs is from -0x800 to +0x7F8
 static void gen_store_qword_helper(HostReg src_reg, HostReg mem_reg, Bit64s offs, Bit32s align) {
@@ -401,7 +400,6 @@ static void gen_store_qword_helper(HostReg src_reg, HostReg mem_reg, Bit64s offs
 	// TODO: unaligned handlers --GM
 	cache_addd(OP_SD_MEM_S(src_reg, offs, mem_reg));
 }
-#endif
 
 
 // move a 32bit (dword==true) or 16bit (dword==false) value from memory into dest_reg
@@ -458,7 +456,7 @@ static void gen_mov_byte_from_reg_low(HostReg src_reg, void *dest) {
 static void gen_mov_qword_from_reg(HostReg src_reg,void* dest) {
 	HostReg temp1 = lock_temp();
 	gen_addr_into(temp1, (Bit64s)dest);
-	gen_load_qword_helper(src_reg, temp1, 0, ((Bit64s)dest) & 7);
+	gen_store_qword_helper(src_reg, temp1, 0, ((Bit64s)dest) & 7);
 	unlock_temp(temp1);
 }
 
