@@ -759,9 +759,8 @@ static void RV_MAYBE_INLINE gen_fill_branch_long(const Bit8u* data) {
 }
 
 static void cache_block_closing(const uint8_t *block_start, Bitu block_size) {
-	// FIXME: Work out how to invalidate the cache properly --GM
-	asm volatile("fence\n");
-	asm volatile("fence.i\n");
+	//flush cache - GCC/LLVM builtin
+	__builtin___clear_cache((char *)block_start, (char *)(block_start+block_size));
 }
 
 static void cache_block_before_close(void) { }
