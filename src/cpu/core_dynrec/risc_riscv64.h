@@ -21,13 +21,10 @@
 // some configuring defines that specify the capabilities of this architecture
 // or aspects of the recompiling
 
-// protect FC_ADDR over function calls if necessaray
-// #define DRC_PROTECT_ADDR_REG
-
 // try to use non-flags generating functions if possible
-// #define DRC_FLAGS_INVALIDATION
+#define DRC_FLAGS_INVALIDATION
 // try to replace _simple functions by code
-// #define DRC_FLAGS_INVALIDATION_DCODE
+#define DRC_FLAGS_INVALIDATION_DCODE
 
 // calling convention modifier
 #define DRC_CALL_CONV	/* nothing */
@@ -40,8 +37,8 @@
 #define RV_IGNORE_ALIGNMENT
 
 // if we need inlining, put something in here to make inlining work
-// #define RV_MAYBE_INLINE
-#define RV_MAYBE_INLINE INLINE
+#define RV_MAYBE_INLINE
+// #define RV_MAYBE_INLINE INLINE
 
 // register mapping
 typedef Bit8u HostReg;
@@ -533,16 +530,6 @@ static void RV_MAYBE_INLINE gen_add_direct_word(void* dest,Bit32u imm,bool dword
 	unlock_temp(temp1);
 }
 
-// add an 8bit constant value to a dword memory value
-static void RV_MAYBE_INLINE gen_add_direct_byte(void* dest,Bit8s imm) {
-	gen_add_direct_word(dest, (Bit32s)imm, 1);
-}
-
-// subtract an 8bit constant value from a dword memory value
-static void RV_MAYBE_INLINE gen_sub_direct_byte(void* dest,Bit8s imm) {
-	gen_add_direct_word(dest, -((Bit32s)imm), 1);
-}
-
 // subtract a 32bit (dword==true) or 16bit (dword==false) constant value from a memory value
 static void RV_MAYBE_INLINE gen_sub_direct_word(void* dest,Bit32u imm,bool dword) {
 	gen_add_direct_word(dest, -(Bit32s)imm, dword);
@@ -846,9 +833,42 @@ static void RV_MAYBE_INLINE gen_lea(HostReg dest_reg,Bitu scale,Bits imm) {
 // called when a call to a function can be replaced by a
 // call to a simpler function
 static void gen_fill_function_ptr(const Bit8u * pos,void* fct_ptr,Bitu flags_type) {
-	// TODO: DRC_FLAGS_INVALIDATION_DCODE --GM
-	Bit64u ipos = (Bit64u)pos;
-	*(Bit64u *)((ipos + 16 + 0x7) & ~0x7) = (Bit64u)fct_ptr;
+#ifdef DRC_FLAGS_INVALIDATION_DCODE
+	Bit32u *data = (Bit32u *)pos;
+	switch (flags_type) {
+		case t_ADDb:
+		case t_ADDw:
+		case t_ADDd:
+			data[0] = OP_ADDW_R(FC_RETOP, HOST_a1, HOST_a2);
+			data[1] = OP_NOP();
+			data[2] = OP_NOP();
+			data[3] = OP_NOP();
+			data[4] = OP_NOP();
+			data[5] = OP_NOP();
+			data[6] = OP_NOP();
+			break;
+
+		case t_XORb:
+		case t_XORw:
+		case t_XORd:
+			data[0] = OP_XOR_R(FC_RETOP, HOST_a1, HOST_a2);
+			data[1] = OP_NOP();
+			data[2] = OP_NOP();
+			data[3] = OP_NOP();
+			data[4] = OP_NOP();
+			data[5] = OP_NOP();
+			data[6] = OP_NOP();
+			break;
+
+		default:
+			// TODO: DRC_FLAGS_INVALIDATION_DCODE --GM
+			printf("gen_fill_function_ptr %p %p %u\n", pos, fct_ptr, (Bit32u)flags_type);
+#endif
+			Bit64u ipos = (Bit64u)pos;
+			*(Bit64u *)((ipos + 16 + 0x7) & ~0x7) = (Bit64u)fct_ptr;
+#ifdef DRC_FLAGS_INVALIDATION_DCODE
+	}
+#endif
 }
 
 #endif
