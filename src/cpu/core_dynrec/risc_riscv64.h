@@ -191,6 +191,7 @@ static HostReg lock_temp(void) {
 		return HOST_t6;
 	}
 	gen_abort_helper("no more temp regs");
+	for (;;) {}
 }
 static void unlock_temp(HostReg reg) {
 	Bit32u bit_mask;
@@ -386,6 +387,7 @@ static void gen_store_dword_helper(HostReg src_reg, HostReg mem_reg, Bit64s offs
 	cache_addd(OP_SW_MEM_S(src_reg, offs, mem_reg));
 }
 
+#if 0
 // store a potentially-unaligned 64bit value to memory
 // offs is from -0x800 to +0x7F8
 static void gen_store_qword_helper(HostReg src_reg, HostReg mem_reg, Bit64s offs, Bit32s align) {
@@ -397,6 +399,7 @@ static void gen_store_qword_helper(HostReg src_reg, HostReg mem_reg, Bit64s offs
 	// TODO: unaligned handlers --GM
 	cache_addd(OP_SD_MEM_S(src_reg, offs, mem_reg));
 }
+#endif
 
 
 // move a 32bit (dword==true) or 16bit (dword==false) value from memory into dest_reg
