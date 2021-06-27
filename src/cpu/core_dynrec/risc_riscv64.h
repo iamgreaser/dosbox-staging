@@ -230,11 +230,13 @@ static void gen_constant_pool_helper(void) {
 	// then swim through the constant pool
 	for (Bit32u idx = 0; idx < rv_const_pool_idx; idx++) {
 		Bit64s const_loc = (Bit64s)(cache.pos);
-		cache_addd((Bit32s)(rv_const_pool[idx].const_value));
-		cache_addd((Bit32s)(rv_const_pool[idx].const_value >> 32L));
+		cache_addq(rv_const_pool[idx].const_value);
 		Bit32u *auipc_loc = rv_const_pool[idx].auipc_loc;
 		Bit64s pc = (Bit64s)auipc_loc;
 		Bit64s delta = (const_loc - pc);
+		if (!(delta >= -0x80000000L && delta <= 0x7FFFFFFFL)) {
+			gen_abort_helper("out-of-range constant\n");
+		}
 		auipc_loc[0] |= OP_AUIPC_U(HOST_zero, ((delta+0x800)>>12));
 		auipc_loc[1] |= OP_LD_MEM_I(HOST_zero, (delta&0xFFF), HOST_zero);
 	}
@@ -585,8 +587,7 @@ static void RV_MAYBE_INLINE gen_call_function_raw(void * func) {
 		cache_addd(OP_JALR_I(HOST_zero, temp1, 0));
 		cache_addd(0);
 		// 0
-		cache_addd((Bit32s)(((Bit64s)func)));
-		cache_addd((Bit32s)(((Bit64s)func)>>32));
+		cache_addq((Bit64s)func);
 	} else {
 		if (((Bit64u)(cache.pos)) & 7) {
 			gen_abort_helper("compressed instructions not supported yet");
@@ -598,8 +599,7 @@ static void RV_MAYBE_INLINE gen_call_function_raw(void * func) {
 		cache_addd(OP_ADDID_I(HOST_ra, HOST_ra, 28));
 		cache_addd(OP_JALR_I(HOST_zero, temp1, 0));
 		// 0
-		cache_addd((Bit32s)(((Bit64s)func)));
-		cache_addd((Bit32s)(((Bit64s)func)>>32));
+		cache_addq((Bit64s)func);
 		// 0
 		cache_addd(0);
 	}
