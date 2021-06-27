@@ -154,6 +154,9 @@ typedef Bit8u HostReg;
 #define OP_OR_R(RD, RS1, RS2) MAKEOP_R(0x33, 0x6, 0x00, RD, RS1, RS2)
 #define OP_AND_R(RD, RS1, RS2) MAKEOP_R(0x33, 0x7, 0x00, RD, RS1, RS2)
 
+// Pseudo-ops
+#define OP_NOP() OP_ADDID_I(HOST_zero, HOST_zero, 0);
+
 static Bit32u temps_in_use = 0;
 
 #define RV_CONST_POOL_ENTRY_MAX 256
@@ -603,7 +606,7 @@ static void RV_MAYBE_INLINE gen_call_function_raw(void * func) {
 // generate a call to a function with paramcount parameters
 // note: the parameters are loaded in the architecture specific way
 // using the gen_load_param_ functions below
-static const Bit8u* RV_MAYBE_INLINE gen_call_function_setup(void * func,Bitu paramcount,bool fastcall=false) {
+static RV_MAYBE_INLINE const Bit8u* gen_call_function_setup(void * func,Bitu paramcount,bool fastcall=false) {
 	const Bit8u* proc_addr = cache.pos;
 	gen_call_function_raw(func);
 	return proc_addr;
@@ -652,7 +655,7 @@ static void gen_run_code(void) {
 
 // return from a function
 static void gen_return_function(void) {
-	printf("cache pos gen_return_function %p\n", (void *)cache.pos);
+	//printf("cache pos gen_return_function %p\n", (void *)cache.pos);
 
 	cache_addd(OP_LD_MEM_I(HOST_ra, (8*0), HOST_sp));
 	cache_addd(OP_LD_MEM_I(HOST_s0, (8*1), HOST_sp));
@@ -684,9 +687,11 @@ static Bit8u* gen_create_branch_on_zero(HostReg reg, bool dword) {
 	} else {
 		cache_addd( OP_SLLID_I(temp1, reg, 48) );
 	}
-	cache_addd( OP_BEQ_B(HOST_zero, temp1, 0) );
+	cache_addd( OP_BNE_B(HOST_zero, temp1, 0) ); // opposite, gets inverted on short branches
+	cache_addd( OP_AUIPC_U(temp1, 0) );
+	cache_addd( OP_JALR_I(HOST_zero, temp1, 0) );
 	unlock_temp(temp1);
-	return (Bit8u *)(cache.pos-4);
+	return (Bit8u *)(cache.pos-12);
 }
 
 // short conditional jump (+-127 bytes) if register is nonzero
@@ -698,9 +703,11 @@ static Bit8u* gen_create_branch_on_nonzero(HostReg reg, bool dword) {
 	} else {
 		cache_addd( OP_SLLID_I(temp1, reg, 48) );
 	}
-	cache_addd( OP_BNE_B(HOST_zero, temp1, 0) );
+	cache_addd( OP_BEQ_B(HOST_zero, temp1, 0) ); // opposite, gets inverted on short branches
+	cache_addd( OP_AUIPC_U(temp1, 0) );
+	cache_addd( OP_JALR_I(HOST_zero, temp1, 0) );
 	unlock_temp(temp1);
-	return (Bit8u *)(cache.pos-4);
+	return (Bit8u *)(cache.pos-12);
 }
 
 // conditional jump if register is nonzero
@@ -713,32 +720,47 @@ static Bit8u* gen_create_branch_long_nonzero(HostReg reg, bool dword) {
 	} else {
 		cache_addd( OP_ANDI_I(temp1, reg, 0x0FF) );
 	}
-	cache_addd( OP_BNE_B(HOST_zero, temp1, 0) );
+	cache_addd( OP_BEQ_B(HOST_zero, temp1, 0) ); // opposite, gets inverted on short branches
+	cache_addd( OP_AUIPC_U(temp1, 0) );
+	cache_addd( OP_JALR_I(HOST_zero, temp1, 0) );
 	unlock_temp(temp1);
-	return (Bit8u *)(cache.pos-4);
+	return (Bit8u *)(cache.pos-12);
 }
 
 // compare 32bit-register against zero and jump if value less/equal than zero
 static const Bit8u* gen_create_branch_long_leqzero(HostReg reg) {
 	HostReg temp1 = lock_temp();
 	cache_addd( OP_ADDIW_I(temp1, reg, 0) );
-	cache_addd( OP_BGE_B(HOST_zero, temp1, 0) );
+	cache_addd( OP_BLT_B(HOST_zero, temp1, 0) ); // opposite, gets inverted on short branches
+	cache_addd( OP_AUIPC_U(temp1, 0) );
+	cache_addd( OP_JALR_I(HOST_zero, temp1, 0) );
 	unlock_temp(temp1);
-	return (Bit8u *)(cache.pos-4);
+	return (Bit8u *)(cache.pos-12);
 }
 
 // calculate relative offset and fill it into the location pointed to by data
 static void RV_MAYBE_INLINE gen_fill_branch(const Bit8u* data) {
-#if C_DEBUG
-	Bits len=cache.pos-(data+0);
-	if (len<0) len=-len;
-	if (len>=0x0800) LOG_MSG("Big jump %d",len);
-#endif
 	Bit64s off = (((Bit64s)(cache.pos)) - (Bit64s)(data+0));
-	if (!(off >= -0x800L && off <= 0x7FFL)) {
-		gen_abort_helper("out-of-range branch");
+	// default to long branches for now
+	if (off >= -0x800L && off <= 0x7FFL) {
+		// use XOR to also invert the condition
+		((Bit32u *)data)[0] ^= MAKEOP_B(0x00, 0x1, HOST_zero, HOST_zero, off);
+		((Bit32u *)data)[1] = OP_NOP();
+		((Bit32u *)data)[2] = OP_NOP();
+	} else {
+		// advance data by 4, meaning subtract that from off
+		off -= 4;
+
+		if (off >= -0x80000000L && off <= 0x7FFFFFFFL) {
+			// set the inverse branch distance
+			((Bit32u *)data)[0] |= MAKEOP_B(0x00, 0x0, HOST_zero, HOST_zero, 12);
+			// now fill in the relative branch
+			((Bit32u *)data)[1] |= OP_AUIPC_U(HOST_zero, ((off+0x800)>>12));
+			((Bit32u *)data)[2] |= OP_JALR_I(HOST_zero, HOST_zero, off);
+		} else {
+			gen_abort_helper("out-of-range branch");
+		}
 	}
-	*(Bit32u *)data |= MAKEOP_B(0x00, 0x0, HOST_zero, HOST_zero, off);
 }
 
 // calculate long relative offset and fill it into the location pointed to by data
